@@ -160,38 +160,51 @@ $("run").addEventListener("click",async()=>{
 // ---------- optimiser ----------
 function distributors(){ const s=new Set(); results.forEach(r=>r.offers.forEach(o=>s.add(o.distributor))); return [...s]; }
 function shipFor(d,sub){ const s=SHIP[d]||{fee:0,free:0}; return (s.free>0&&sub>=s.free)?0:s.fee; }
-function planSingle(d){ let sub=0, missing=[]; for(const r of results){ const o=r.offers.find(o=>o.distributor===d&&o.inStock); if(!o){missing.push(r.mpn);continue;} sub+=o.lineTotal; } return {name:d,lines:results.length-missing.length,sub,ship:shipFor(d,sub),missing,total:sub+shipFor(d,sub)}; }
-function planSplit(){ // greedy cheapest in-stock per line, then consolidate small baskets if it saves money
- const pick={}; for(const r of results){ const o=r.offers.filter(o=>o.inStock).sort((a,b)=>a.lineTotal-b.lineTotal)[0]; if(o) pick[r.mpn]=o; }
- const basket=()=>{ const b={}; for(const [m,o] of Object.entries(pick)){ (b[o.distributor]??={sub:0,lines:[]}); b[o.distributor].sub+=o.lineTotal; b[o.distributor].lines.push(m);} for(const d in b){b[d].ship=shipFor(d,b[d].sub);} return b; };
- const total=b=>Object.values(b).reduce((a,x)=>a+x.sub+x.ship,0);
- let b=basket(), improved=true, guard=0;
- while(improved&&guard++<20){ improved=false; const dists=Object.keys(b).sort((x,y)=>b[x].sub-b[y].sub);
-  for(const small of dists){ // try moving all lines of the smallest basket elsewhere
-   const trial={...pick}; let ok=true; for(const m of b[small].lines){ const r=results.find(r=>r.mpn===m); const alt=r.offers.filter(o=>o.inStock&&o.distributor!==small&&(b[o.distributor]||o.distributor!==small)).sort((a,c)=>a.lineTotal-c.lineTotal)[0]; if(!alt){ok=false;break;} trial[m]=alt; }
-   if(!ok) continue; const saved=pick; const before=total(b); Object.assign(pick,trial); const nb=basket(); if(total(nb)<before-0.01){ b=nb; improved=true; break; } else { for(const k in saved) pick[k]=saved[k]; } } }
- const missing=results.filter(r=>!pick[r.mpn]).map(r=>r.mpn);
- return {name:"Best split",baskets:b,missing,total:total(b),pick};
+// lines that can be bought somewhere right now; lines out of stock everywhere are excluded from every plan and reported separately
+function buyable(){ return results.filter(r=>r.offers.some(o=>o.inStock)); }
+function unbuyable(){ return results.filter(r=>!r.offers.some(o=>o.inStock)).map(r=>r.mpn); }
+function planSingle(d){ let sub=0, missing=[], pick={}; for(const r of buyable()){ const o=r.offers.find(o=>o.distributor===d&&o.inStock); if(!o){missing.push(r.mpn);continue;} sub+=o.lineTotal; pick[r.mpn]=o; }
+  const ship=shipFor(d,sub); return {name:d, single:true, lines:Object.keys(pick).length, sub, ship, missing, total:sub+ship, pick, baskets:{[d]:{sub,ship,lines:Object.keys(pick)}}}; }
+function basketOf(pick){ const b={}; for(const [m,o] of Object.entries(pick)){ (b[o.distributor]??={sub:0,lines:[]}); b[o.distributor].sub+=o.lineTotal; b[o.distributor].lines.push(m);} for(const d in b) b[d].ship=shipFor(d,b[d].sub); return b; }
+const totalOf=b=>Object.values(b).reduce((a,x)=>a+x.sub+x.ship,0);
+function planSplit(){
+  const lines=buyable(); const pick={}; for(const r of lines){ pick[r.mpn]=r.offers.filter(o=>o.inStock).sort((a,b)=>a.lineTotal-b.lineTotal)[0]; }
+  let b=basketOf(pick); let improved=true, guard=0;
+  // local search: try dissolving each basket into the others (in either direction) while the grand total drops
+  while(improved&&guard++<30){ improved=false;
+    for(const from of Object.keys(b)){ const trial={...pick}; let ok=true;
+      for(const m of b[from].lines){ const r=lines.find(r=>r.mpn===m); const alt=r.offers.filter(o=>o.inStock&&o.distributor!==from).sort((x,y)=>x.lineTotal-y.lineTotal)[0]; if(!alt){ok=false;break;} trial[m]=alt; }
+      if(!ok) continue; const nb=basketOf(trial); if(totalOf(nb)<totalOf(b)-0.005){ Object.assign(pick,trial); b=nb; improved=true; break; } } }
+  return {name:"Best split", baskets:b, total:totalOf(b), pick, missing:[]};
+}
+function bestPlan(){ // the cheapest of: every single-distributor order that covers all buyable lines, and the split
+  const ds=distributors(); const singles=ds.map(planSingle).filter(p=>p.missing.length===0); const split=planSplit();
+  const all=[...singles,split].sort((a,b)=>a.total-b.total); const best=all[0];
+  if(best.single){ best.name=best.name+" only"; }
+  const nearly=ds.map(planSingle).filter(p=>p.missing.length>0&&p.missing.length<=2&&p.lines>0).map(p=>({...p,name:p.name+" only",nearly:true})).sort((a,b)=>a.total-b.total);
+  return {best, split, singles:singles.sort((a,b)=>a.total-b.total), nearly, unbuyable:unbuyable()};
 }
 function renderAll(){
- const vat=1+(+$("vat").value||0)/100; const ds=distributors(); const singles=ds.map(planSingle).filter(p=>p.missing.length===0).sort((a,b)=>a.total-b.total); const split=planSplit();
- const eol=results.filter(r=>/obsolete|eol|end of life|discontinued/i.test(r.lifecycle||"")).length, nrnd=results.filter(r=>/nrnd|not recommended/i.test(r.lifecycle||"")).length, oos=results.filter(r=>!r.offers.some(o=>o.inStock)).length, nf=results.filter(r=>r.notFound).length;
- const bestSingle=singles[0];
- $("summary").innerHTML=`<div class="sum best"><b>${money(split.total*vat)}</b><span>best split, ${Object.keys(split.baskets).length} distributor${Object.keys(split.baskets).length===1?"":"s"}${vat>1?", inc. VAT":""}</span></div>
-  ${bestSingle?`<div class="sum"><b>${money(bestSingle.total*vat)}</b><span>cheapest single order (${bestSingle.name})</span></div>`:`<div class="sum"><b>—</b><span>no single distributor has every line in stock</span></div>`}
+ const vat=1+(+$("vat").value||0)/100; const ds=distributors(); const {best,split,singles,nearly,unbuyable:ub}=bestPlan();
+ const eol=results.filter(r=>/obsolete|eol|end of life|discontinued/i.test(r.lifecycle||"")).length, nrnd=results.filter(r=>/nrnd|not recommended/i.test(r.lifecycle||"")).length, nf=results.filter(r=>r.notFound).length, oos=ub.length-nf;
+ const nDist=Object.keys(best.baskets).length;
+ $("summary").innerHTML=`<div class="sum best"><b>${money(best.total*vat)}</b><span>cheapest: ${best.single?best.name:nDist+" distributors"}${vat>1?", inc. VAT":""}${ub.length?" · excl. "+ub.length+" unavailable":""}</span></div>
+  ${singles.length?`<div class="sum"><b>${money(singles[0].total*vat)}</b><span>cheapest single order (${singles[0].name})</span></div>`:`<div class="sum"><b>—</b><span>no single distributor has every available line</span></div>`}
   <div class="sum"><b>${results.length}</b><span>lines · ${results.reduce((a,r)=>a+r.qty,0)} parts</span></div>
   <div class="sum"><b style="color:${eol||oos||nf?'var(--bad)':'var(--accent)'}">${eol+nrnd+oos+nf}</b><span>${eol} EOL · ${nrnd} NRND · ${oos} out of stock · ${nf} not found</span></div>`;
  const cols=ds; $("table").querySelector("thead").innerHTML=`<tr><th>MPN</th><th>Qty</th><th>Status</th>${cols.map(d=>`<th class="num">${d}</th>`).join("")}<th class="num">Best</th></tr>`;
- $("table").querySelector("tbody").innerHTML=results.map(r=>{ const best=split.pick[r.mpn]; const lc=r.lifecycle||""; const pill=r.notFound?'<span class="pill bad">not found</span>':/obsolete|eol|discontinued/i.test(lc)?'<span class="pill bad">EOL</span>':/nrnd/i.test(lc)?'<span class="pill warn">NRND</span>':(!r.offers.some(o=>o.inStock)?'<span class="pill bad">no stock</span>':'<span class="pill ok">OK</span>');
-  return `<tr><td><span class="mono">${r.mpn}</span><br><span class="dim" style="font-size:.78rem">${r.manufacturer||""}${r.description?" · "+r.description:""}</span></td><td class="num">${r.qty}</td><td>${pill}</td>${cols.map(d=>{const o=r.offers.find(o=>o.distributor===d); if(!o) return '<td class="num dim">—</td>'; const cls=best&&best.distributor===d?"best-cell":""; return `<td class="num ${cls}" title="unit ${money(o.unit)} · MOQ ${o.moq} · ${o.packaging||""}">${o.url&&o.url!=="#"?`<a href="${o.url}" target="_blank" rel="noopener nofollow">${money(o.lineTotal)}</a>`:money(o.lineTotal)}<br><span class="dim" style="font-size:.74rem">${o.inStock?o.stock.toLocaleString()+" in stock":"<span style='color:var(--bad)'>"+(o.stock||0)+" stock</span>"}${o.buyQty>r.qty?" · buy "+o.buyQty:""}</span></td>`;}).join("")}<td class="num">${best?`<b>${money(best.lineTotal)}</b><br><span class="dim" style="font-size:.74rem">${best.distributor}</span>`:'<span class="dim">—</span>'}</td></tr>`; }).join("");
- const plans=[split,...singles.slice(0,3)];
- $("split").innerHTML=plans.map((p,i)=>{ const isSplit=!!p.baskets; const body=isSplit?Object.entries(p.baskets).sort((a,b)=>b[1].sub-a[1].sub).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join(""):`<li><span>${p.lines} lines</span><span>${money(p.sub*vat)}</span></li><li><span>Shipping</span><span>${p.ship?money(p.ship):"free"}</span></li>`;
-  return `<div class="panel" ${i===0?'style="border-color:var(--accent)"':''}><h3>${p.name}${i===0?' <span class="pill ok">cheapest</span>':''}</h3><ul>${body}</ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)}${i>0?` <span class="dim" style="font-weight:400">+${money((p.total-split.total)*vat)} vs split</span>`:""}</p>${p.missing&&p.missing.length?`<p class="hint">Out of stock everywhere: ${p.missing.join(", ")}</p>`:""}</div>`; }).join("");
+ $("table").querySelector("tbody").innerHTML=results.map(r=>{ const pk=best.pick[r.mpn]; const lc=r.lifecycle||""; const pill=r.notFound?'<span class="pill bad">not found</span>':/obsolete|eol|discontinued/i.test(lc)?'<span class="pill bad">EOL</span>':/nrnd/i.test(lc)?'<span class="pill warn">NRND</span>':(!r.offers.some(o=>o.inStock)?'<span class="pill bad">no stock</span>':'<span class="pill ok">OK</span>');
+  return `<tr><td><span class="mono">${r.mpn}</span><br><span class="dim" style="font-size:.78rem">${r.manufacturer||""}${r.description?" · "+r.description:""}</span></td><td class="num">${r.qty}</td><td>${pill}</td>${cols.map(d=>{const o=r.offers.find(o=>o.distributor===d); if(!o) return '<td class="num dim">—</td>'; const cls=pk&&pk.distributor===d?"best-cell":""; return `<td class="num ${cls}" title="unit ${money(o.unit)} · MOQ ${o.moq} · ${o.packaging||""}">${o.url&&o.url!=="#"?`<a href="${o.url}" target="_blank" rel="noopener nofollow">${money(o.lineTotal)}</a>`:money(o.lineTotal)}<br><span class="dim" style="font-size:.74rem">${o.inStock?o.stock.toLocaleString()+" in stock":"<span style='color:var(--bad)'>"+(o.stock||0)+" stock</span>"}${o.buyQty>r.qty?" · buy "+o.buyQty:""}</span></td>`;}).join("")}<td class="num">${pk?`<b>${money(pk.lineTotal)}</b><br><span class="dim" style="font-size:.74rem">${pk.distributor}</span>`:'<span class="dim">—</span>'}</td></tr>`; }).join("");
+ const plans=[best, ...(best.single?[split]:[]), ...singles.filter(p=>p!==best)].slice(0,4);
+ $("split").innerHTML=plans.map((p,i)=>{ const body=Object.entries(p.baskets).sort((a,b)=>b[1].sub-a[1].sub).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join("");
+  return `<div class="panel" ${i===0?'style="border-color:var(--accent)"':''}><h3>${p.name}${i===0?' <span class="pill ok">cheapest</span>':''}</h3><ul>${body}</ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)}${i>0?` <span class="dim" style="font-weight:400">+${money((p.total-best.total)*vat)}</span>`:""}</p></div>`; }).join("")
+  + nearly.filter(p=>p.total<best.total).map(p=>`<div class="panel" style="border-style:dashed"><h3>${p.name} <span class="pill warn">if you source ${p.missing.length} line${p.missing.length>1?"s":""} elsewhere</span></h3><ul>${Object.entries(p.baskets).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join("")}<li><span class="dim">Missing: <span class="mono">${p.missing.join(", ")}</span></span></li></ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)} <span class="dim" style="font-weight:400">saves ${money((best.total-p.total)*vat)} before buying the missing part${p.missing.length>1?"s":""}</span></p></div>`).join("")
+  + (ub.length?`<div class="panel"><h3>Not available anywhere</h3><ul>${ub.map(m=>`<li><span class="mono">${m}</span><span class="dim">excluded from totals</span></li>`).join("")}</ul></div>`:"");
  $("meta").textContent=`Checked ${new Date().toLocaleString("en-GB")} · prices in ${cur}${vat>1?" · VAT "+$("vat").value+"% added":""}`;
  if(results.some(r=>r.demo)) $("meta").textContent+=" · DEMO DATA"; if($("meta").dataset.err){ $("meta").textContent+=" · some distributors failed: "+$("meta").dataset.err; }
 }
 ["vat","boards","overage"].forEach(id=>$(id).addEventListener("input",()=>{ if(results&&id==="vat") renderAll(); }));
-$("export").addEventListener("click",()=>{ if(!results) return; const split=planSplit();
+$("export").addEventListener("click",()=>{ if(!results) return; const split=bestPlan().best;
  const out=[["MPN","Manufacturer","Qty","Lifecycle","Best distributor","SKU","Unit price","Buy qty","Line total","Stock","URL"]];
  for(const r of results){ const o=split.pick[r.mpn]; out.push([r.mpn,r.manufacturer||"",r.qty,r.lifecycle||"",o?o.distributor:"",o?o.sku:"",o?o.unit:"",o?o.buyQty:"",o?o.lineTotal:"",o?o.stock:"",o?o.url:""]); }
  const csv=Papa.unparse(out); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="bomrun-"+Date.now()+".csv"; a.click(); });
