@@ -31,15 +31,25 @@ function lifecycle(s) { s = String(s || "").toLowerCase(); if (!s) return null;
 
 // ---------- Farnell / element14 ----------
 const farnellLimit = limiter(2, 510); // Basic plan: 2 calls/s
-async function farnell(mpn, qty, want, key) {
-  const url = `https://api.element14.com/catalog/products?versionNumber=1.4&term=${encodeURIComponent("manuPartNum:" + mpn)}&storeInfo.id=uk.farnell.com&resultsSettings.offset=0&resultsSettings.numberOfResults=3&resultsSettings.responseGroup=large&callInfo.responseDataFormat=JSON&callInfo.apiKey=${key}`;
+const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+async function farnellQuery(term, key) {
+  const url = `https://api.element14.com/catalog/products?versionNumber=1.4&term=${encodeURIComponent(term)}&storeInfo.id=uk.farnell.com&resultsSettings.offset=0&resultsSettings.numberOfResults=10&resultsSettings.responseGroup=large&callInfo.responseDataFormat=JSON&callInfo.apiKey=${key}`;
   const r = await farnellLimit(() => fetch(url)); if (!r.ok) throw new Error("farnell " + r.status);
-  const j = await r.json(); const ret = j.manufacturerPartNumberSearchReturn || j.keywordSearchReturn || {}; const ps = ret.products || [];
-  const exact = ps.find(p => (p.translatedManufacturerPartNumber || "").toLowerCase() === mpn.toLowerCase()) || ps[0]; if (!exact) return null;
-  const breaks = (exact.prices || []).map(p => ({ qty: +p.from, unit: +p.cost }));
-  const pack = exact.packSize && exact.packSize > 1 ? exact.packSize : 1;
-  return { meta: { manufacturer: exact.brandName, description: exact.displayName, lifecycle: lifecycle(exact.productStatus) },
-    offer: offer("Farnell", { sku: exact.sku, stock: exact.stock?.level, moq: exact.translatedMinimumOrderQuality || 1, mult: pack, packaging: exact.unitOfMeasure, breaks, url: `https://uk.farnell.com/${exact.sku}`, currency: "GBP" }, qty, want) };
+  const j = await r.json(); const ret = j.manufacturerPartNumberSearchReturn || j.keywordSearchReturn || j.premierFarnellPartNumberReturn || {}; return ret.products || []; }
+async function farnell(mpn, qty, want, key) {
+  let ps = await farnellQuery("manuPartNum:" + mpn, key);
+  let exact = ps.filter(p => norm(p.translatedManufacturerPartNumber) === norm(mpn));
+  if (!exact.length) { ps = await farnellQuery("any:" + mpn, key); exact = ps.filter(p => norm(p.translatedManufacturerPartNumber) === norm(mpn)); }
+  if (!exact.length) return null; // never substitute a different part
+  // Farnell lists reels, packs and cut tape as separate SKUs: pick the cheapest way to buy this qty, preferring in-stock
+  const offers = exact.map(e => {
+    const breaks = (e.prices || []).map(p => ({ qty: +p.from, unit: +p.cost }));
+    const pack = e.packSize && e.packSize > 1 ? e.packSize : 1;
+    return offer("Farnell", { sku: e.sku, stock: e.stock?.level, moq: e.translatedMinimumOrderQuality || 1, mult: pack, packaging: e.unitOfMeasure, breaks, url: `https://uk.farnell.com/${e.sku}`, currency: "GBP" }, qty, want); })
+    .filter(Boolean).sort((a, b) => (b.inStock - a.inStock) || (a.lineTotal - b.lineTotal));
+  const e = exact[0]; const brand = e.brandName || "";
+  const desc = String(e.displayName || "").replace(new RegExp("^" + brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*-\\s*", "i"), "").replace(new RegExp("^" + mpn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*-\\s*", "i"), "");
+  return { meta: { manufacturer: brand, description: desc, lifecycle: lifecycle(e.productStatus) }, offer: offers[0] || null };
 }
 
 // ---------- Mouser ----------
@@ -48,7 +58,7 @@ async function mouser(mpn, qty, want, key) {
   const r = await mouserLimit(() => fetch(`https://api.mouser.com/api/v1/search/partnumber?apiKey=${key}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ SearchByPartRequest: { mouserPartNumber: mpn, partSearchOptions: "Exact" } }) }));
   if (!r.ok) throw new Error("mouser " + r.status); const j = await r.json();
   if (j.Errors && j.Errors.length) throw new Error("mouser: " + j.Errors.map(e => e.Message).join("; "));
-  const ps = j.SearchResults?.Parts || []; const exact = ps.find(p => (p.ManufacturerPartNumber || "").toLowerCase() === mpn.toLowerCase()) || ps[0]; if (!exact) return null;
+  const ps = j.SearchResults?.Parts || []; const exact = ps.find(p => norm(p.ManufacturerPartNumber) === norm(mpn)); if (!exact) return null;
   const cur = exact.PriceBreaks?.[0]?.Currency || "GBP";
   const breaks = (exact.PriceBreaks || []).map(p => ({ qty: +p.Quantity, unit: num(p.Price) }));
   return { meta: { manufacturer: exact.Manufacturer, description: exact.Description, lifecycle: lifecycle(exact.LifecycleStatus) },
@@ -66,7 +76,7 @@ async function digikey(mpn, qty, want, id, secret) {
   const tok = await dkToken(id, secret);
   const r = await dkLimit(() => fetch("https://api.digikey.com/products/v4/search/keyword", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok, "X-DIGIKEY-Client-Id": id, "X-DIGIKEY-Locale-Site": "UK", "X-DIGIKEY-Locale-Language": "en", "X-DIGIKEY-Locale-Currency": want }, body: JSON.stringify({ Keywords: mpn, Limit: 3 }) }));
   if (!r.ok) throw new Error("digikey " + r.status); const j = await r.json();
-  const ps = j.Products || []; const exact = ps.find(p => (p.ManufacturerProductNumber || "").toLowerCase() === mpn.toLowerCase()) || ps[0]; if (!exact) return null;
+  const ps = j.Products || []; const exact = ps.find(p => norm(p.ManufacturerProductNumber) === norm(mpn)); if (!exact) return null;
   const vars = (exact.ProductVariations || []).filter(v => (v.StandardPricing || []).length);
   const best = vars.map(v => offer("DigiKey", { sku: v.DigiKeyProductNumber, stock: v.QuantityAvailableforPackageType ?? exact.QuantityAvailable, moq: v.MinimumOrderQuantity || 1, packaging: v.PackageType?.Name, breaks: v.StandardPricing.map(p => ({ qty: +p.BreakQuantity, unit: +p.UnitPrice })), url: exact.ProductUrl, currency: want }, qty, want))
     .filter(Boolean).sort((a, b) => (b.inStock - a.inStock) || (a.lineTotal - b.lineTotal))[0] || null;
