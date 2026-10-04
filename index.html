@@ -48,7 +48,7 @@ footer{margin:56px 0 40px;font-size:.84rem;color:var(--ink-soft)}
 
 <header>
  <h1>Price and stock-check your whole BOM in one go.</h1>
- <p>Paste a parts list or drop a CSV/Excel export from KiCad, Altium or Eagle. Bomrun checks every line across Mouser, DigiKey, Farnell, LCSC and more, flags end-of-life parts, and works out the cheapest way to split the order.</p>
+ <p>Paste a parts list or drop a CSV/Excel export from KiCad, Altium or Eagle. Bomrun checks every line across Farnell, Mouser and DigiKey, flags end-of-life parts, and works out the cheapest way to split the order.</p>
 </header>
 
 <section class="input-grid">
@@ -70,7 +70,7 @@ LM358DR, 4
   <details class="settings"><summary>Shipping thresholds used by the split optimiser</summary>
    <table style="margin-top:8px" id="shipTable"><thead><tr><th>Distributor</th><th class="num">Shipping</th><th class="num">Free over</th></tr></thead><tbody></tbody></table></details>
   <div class="actions"><button class="btn" id="run">Check prices</button><button class="btn quiet" id="sample">Load sample BOM</button><span class="hint" id="count"></span></div>
-  <p class="hint" style="margin-top:12px">Free for up to 20 lines per run. No account needed. Prices are live from distributor APIs via Octopart; we never store your BOM in v1.</p>
+  <p class="hint" style="margin-top:12px">Free for up to 20 lines per run. No account needed. Prices come straight from the distributors' own APIs; we never store your BOM in v1.</p>
  </div>
 </section>
 
@@ -125,7 +125,7 @@ function parseText(text){
 function fillCols(m,q){ const opts=headers.map((h,i)=>`<option value="${i}">${h||("Column "+(i+1))}</option>`).join(""); $("colMpn").innerHTML=opts; $("colQty").innerHTML='<option value="-1">(none – assume 1)</option>'+opts; $("colMpn").value=m; $("colQty").value=headers.length>1?q:-1; }
 function lines(){ const mi=+$("colMpn").value, qi=+$("colQty").value, boards=+$("boards").value||1, over=1+(+$("overage").value||0)/100;
  const out=[]; const seen={};
- for(const r of rows){ const mpn=(r[mi]||"").replace(/^"|"$/g,"").trim(); if(!mpn||!looksLikeMpn(mpn)) continue; const q=qi>=0?(parseFloat(r[qi])||1):1; const qty=Math.ceil(q*boards*over);
+ for(const r of rows){ const mpn=(r[mi]||"").replace(/^"|"$/g,"").trim(); if(!mpn||!looksLikeMpn(mpn)) continue; const q=qi>=0?(parseFloat(r[qi])||1):1; const base=Math.ceil(q*boards); const qty=Math.max(base,Math.round(base*over));
   if(seen[mpn]!==undefined){ out[seen[mpn]].qty+=qty; out[seen[mpn]].perBoard+=q; } else { seen[mpn]=out.length; out.push({mpn,qty,perBoard:q,raw:r}); } }
  return out; }
 $("bom").addEventListener("input",()=>parseText($("bom").value));
@@ -153,7 +153,7 @@ $("run").addEventListener("click",async()=>{
  cur=$("cur").value; $("run").disabled=true; $("run").textContent="Checking "+ls.length+" lines…";
  try{ const r=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lines:ls.map(l=>({mpn:l.mpn,qty:l.qty})),currency:cur})});
   const j=await r.json(); if(j.error) throw new Error(j.error);
-  const byMpn=Object.fromEntries(ls.map(l=>[l.mpn.toLowerCase(),l])); results=j.results.map((x,i)=>{const l=byMpn[String(x.mpn||'').toLowerCase()]||ls[i]||{qty:1,perBoard:1}; return {...x,qty:l.qty,perBoard:l.perBoard};}); $("modeTag").textContent=j.mode==="demo"?"demo data – add API keys":"live prices"; renderAll(); $("results").hidden=false; $("results").scrollIntoView({behavior:"smooth"});
+  const byMpn=Object.fromEntries(ls.map(l=>[l.mpn.toLowerCase(),l])); results=j.results.map((x,i)=>{const l=byMpn[String(x.mpn||'').toLowerCase()]||ls[i]||{qty:1,perBoard:1}; return {...x,qty:l.qty,perBoard:l.perBoard};}); $("modeTag").textContent=j.mode==="demo"?"demo data – add API keys":"live: "+(j.sources||[]).join(" · "); if(j.errors){console.warn("distributor errors",j.errors); $("meta").dataset.err=Object.entries(j.errors).map(([k,v])=>k+": "+v).join(" | ");} renderAll(); $("results").hidden=false; $("results").scrollIntoView({behavior:"smooth"});
  }catch(e){ alert("Price check failed: "+e.message); } finally{ $("run").disabled=false; $("run").textContent="Check prices"; }
 });
 
@@ -188,7 +188,7 @@ function renderAll(){
  $("split").innerHTML=plans.map((p,i)=>{ const isSplit=!!p.baskets; const body=isSplit?Object.entries(p.baskets).sort((a,b)=>b[1].sub-a[1].sub).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join(""):`<li><span>${p.lines} lines</span><span>${money(p.sub*vat)}</span></li><li><span>Shipping</span><span>${p.ship?money(p.ship):"free"}</span></li>`;
   return `<div class="panel" ${i===0?'style="border-color:var(--accent)"':''}><h3>${p.name}${i===0?' <span class="pill ok">cheapest</span>':''}</h3><ul>${body}</ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)}${i>0?` <span class="dim" style="font-weight:400">+${money((p.total-split.total)*vat)} vs split</span>`:""}</p>${p.missing&&p.missing.length?`<p class="hint">Out of stock everywhere: ${p.missing.join(", ")}</p>`:""}</div>`; }).join("");
  $("meta").textContent=`Checked ${new Date().toLocaleString("en-GB")} · prices in ${cur}${vat>1?" · VAT "+$("vat").value+"% added":""}`;
- if(results.some(r=>r.demo)) $("meta").textContent+=" · DEMO DATA";
+ if(results.some(r=>r.demo)) $("meta").textContent+=" · DEMO DATA"; if($("meta").dataset.err){ $("meta").textContent+=" · some distributors failed: "+$("meta").dataset.err; }
 }
 ["vat","boards","overage"].forEach(id=>$(id).addEventListener("input",()=>{ if(results&&id==="vat") renderAll(); }));
 $("export").addEventListener("click",()=>{ if(!results) return; const split=planSplit();
