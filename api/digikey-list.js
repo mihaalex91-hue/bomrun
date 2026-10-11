@@ -19,12 +19,17 @@ module.exports = async (req, res) => {
     const url = ENDPOINT + "?listName=" + encodeURIComponent(listName) + "&tags=" + encodeURIComponent("Bomrun");
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Mozilla/5.0 (compatible; Bomrun/1.0; +https://bomrun.com)" }, body: JSON.stringify(payload) });
     const text = await r.text();
+    console.log("digikey-list status", r.status, "ct", r.headers.get("content-type"), "body", text.slice(0, 300));
     let data = null; try { data = JSON.parse(text); } catch {}
-    if (!r.ok || !data || !data.singleUseUrl) {
+    // Be lenient about the shape: {singleUseUrl}, {SingleUseUrl}, {data:{singleUseUrl}}, a bare string, or a URL inside text.
+    const findUrl = v => { if (!v) return null; if (typeof v === "string") { const m = v.match(/https?:\/\/[^\s"'<>]+mylists[^\s"'<>]*/i); return m ? m[0] : null; }
+      if (typeof v === "object") { for (const k of Object.keys(v)) { const f = findUrl(v[k]); if (f) return f; } } return null; };
+    const found = findUrl(data) || findUrl(text);
+    if (!r.ok || !found) {
       const blocked = /just a moment|cloudflare|challenge/i.test(text);
-      return res.status(502).json({ error: blocked ? "DigiKey blocked the request (bot check). Use the CSV upload instead." : ("DigiKey returned " + r.status), detail: (data && data.error) || text.slice(0, 200) });
+      return res.status(502).json({ error: blocked ? "DigiKey blocked the request (bot check)" : ("DigiKey returned " + r.status + " without a list URL"), detail: text.slice(0, 160) });
     }
-    return res.status(200).json({ url: data.singleUseUrl, count: items.length });
+    return res.status(200).json({ url: found, count: items.length });
   } catch (e) {
     return res.status(500).json({ error: String(e && e.message || e) });
   }
