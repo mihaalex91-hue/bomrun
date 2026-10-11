@@ -44,7 +44,7 @@ footer{margin:56px 0 40px;font-size:.84rem;color:var(--ink-soft)}
 </style>
 </head>
 <body><div class="wrap">
-<nav><a class="brand" href="/">bom<span>run</span></a><span style="display:flex;gap:10px;align-items:center"><a class="tag" href="mailto:miha.alex91@gmail.com?subject=Bomrun%20feedback&body=What%20I%20checked%3A%0AWhat%20was%20wrong%20or%20missing%3A%0A" style="text-decoration:none">Send feedback</a><span class="tag" id="modeTag">v1 · free beta</span></span></nav>
+<nav><a class="brand" href="/">bom<span>run</span></a><span style="display:flex;gap:10px;align-items:center"><button class="tag" id="fbBtn" type="button" style="cursor:pointer;background:transparent;font:inherit;color:var(--ink)">Send feedback</button><span class="tag" id="modeTag">v1 · free beta</span></span></nav>
 
 <header>
  <h1>Price and stock-check your whole BOM in one go.</h1>
@@ -89,7 +89,7 @@ LM358DR, 4
  <div class="panel"><h2>Coming next</h2><p>Saved BOMs with price and stock alerts, alternates for out-of-stock parts, and a KiCad plugin. Paid plans from £8/month; the free tier stays free.</p></div>
 </section>
 
-<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account, no cookies beyond anonymous page-view analytics.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="mailto:miha.alex91@gmail.com?subject=Bomrun%20feedback">Email me</a> – I read everything. © 2026 Bomrun.</p></footer>
+<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account, no cookies beyond anonymous page-view analytics.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="#" id="fbBtn2">Send feedback</a> – I read everything. © 2026 Bomrun.</p></footer>
 </div>
 
 <script>
@@ -208,6 +208,19 @@ $("export").addEventListener("click",()=>{ if(!results) return; const split=best
  const out=[["MPN","Manufacturer","Qty","Lifecycle","Best distributor","SKU","Unit price","Buy qty","Line total","Stock","URL"]];
  for(const r of results){ const o=split.pick[r.mpn]; out.push([r.mpn,r.manufacturer||"",r.qty,r.lifecycle||"",o?o.distributor:"",o?o.sku:"",o?o.unit:"",o?o.buyQty:"",o?o.lineTotal:"",o?o.stock:"",o?o.url:""]); }
  const csv=Papa.unparse(out); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="bomrun-"+Date.now()+".csv"; a.click(); });
+</script>
+
+<div id="fbPanel" hidden style="position:fixed;right:20px;bottom:20px;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:50">
+ <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Send feedback</b><button id="fbClose" type="button" style="background:none;border:0;color:var(--ink-soft);font-size:1.2rem;cursor:pointer">×</button></div>
+ <p class="hint" style="margin:0 0 10px">Wrong price, missing distributor, a feature you'd pay for – anything. Email me at:</p>
+ <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><code class="mono" id="fbAddr" style="flex:1;padding:8px 10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)">miha.alex91@gmail.com</code><button class="btn quiet" id="fbCopy" type="button" style="padding:8px 12px">Copy</button></div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" style="padding:8px 12px" target="_blank" rel="noopener" href="https://mail.google.com/mail/?view=cm&to=miha.alex91@gmail.com&su=Bomrun%20feedback&body=What%20I%20checked%3A%0AWhat%20was%20wrong%20or%20missing%3A%0A">Open in Gmail</a><a class="btn quiet" style="padding:8px 12px" href="mailto:miha.alex91@gmail.com?subject=Bomrun%20feedback&body=What%20I%20checked%3A%0AWhat%20was%20wrong%20or%20missing%3A%0A">Open in my mail app</a></div>
+</div>
+<script>
+(function(){const P=document.getElementById('fbPanel');const open=e=>{if(e)e.preventDefault();P.hidden=false;};
+['fbBtn','fbBtn2'].forEach(id=>{const b=document.getElementById(id); if(b) b.addEventListener('click',open);});
+document.getElementById('fbClose').addEventListener('click',()=>P.hidden=true);
+document.getElementById('fbCopy').addEventListener('click',async()=>{const b=document.getElementById('fbCopy');try{await navigator.clipboard.writeText('miha.alex91@gmail.com');b.textContent='Copied';}catch(e){b.textContent='Select & copy';}setTimeout(()=>b.textContent='Copy',1800);});})();
 </script>
 <script defer src="/_vercel/insights/script.js"></script>
 </body></html>
