@@ -183,11 +183,18 @@ async function resolveSpec(sp, qty, want, id, secret) {
     const vars = (p.ProductVariations || []).filter(v => (v.StandardPricing || []).length);
     const best = vars.map(v => offer("DigiKey", { sku: v.DigiKeyProductNumber, stock: v.QuantityAvailableforPackageType ?? p.QuantityAvailable, moq: v.MinimumOrderQuantity || 1, packaging: v.PackageType?.Name, breaks: v.StandardPricing.map(b => ({ qty: +b.BreakQuantity, unit: +b.UnitPrice })), url: p.ProductUrl, currency: want }, qty, want)).filter(Boolean)
       .sort((x, y) => (y.inStock - x.inStock) || (x.lineTotal - y.lineTotal))[0];
+    const tolTxt = ((p.Parameters || []).find(x => /^tolerance$/i.test(x.ParameterText || "")) || {}).ValueText || "";
+    const tolPct = (tolTxt.match(/(\d+(?:\.\d+)?)\s*%/) || [])[1];
+    const tightTol = sp.type !== "C" || sp.tol ? true : (tolPct != null && +tolPct <= 10);
     const exactRating = sp.type === "C" ? (!sp.voltage || a.voltage === sp.voltage) : (!sp.tol || a.tol === sp.tol);
-    cands.push({ mpn, manufacturer: p.Manufacturer?.Name || "", description: desc, inStock: (p.QuantityAvailable || 0) >= qty, brand: GOOD_BRANDS.test(p.Manufacturer?.Name || ""), exactRating, cost: best ? best.lineTotal : Infinity }); }
-  cands.sort((x, y) => (y.inStock - x.inStock) || (y.brand - x.brand) || (x.cost - y.cost) || (y.exactRating - x.exactRating));
+    cands.push({ mpn, manufacturer: p.Manufacturer?.Name || "", description: desc, inStock: (p.QuantityAvailable || 0) >= qty, brand: GOOD_BRANDS.test(p.Manufacturer?.Name || ""), exactRating, tightTol, cost: best ? best.lineTotal : Infinity }); }
+  // caps with no tolerance given: prefer ±10% (or tighter) over ±20%
+  cands.sort((x, y) => (y.inStock - x.inStock) || (y.brand - x.brand) || (y.tightTol - x.tightTol) || (x.cost - y.cost) || (y.exactRating - x.exactRating));
   console.log("[spec]", sp.label, "kw=", kw, "results", ps.length, "matching", cands.length, cands.slice(0, 3).map(c => c.mpn + " " + c.cost).join(" | "));
-  return { keywords: kw, pick: cands[0] || null, alternatives: cands.slice(1, 4).map(c => ({ mpn: c.mpn, manufacturer: c.manufacturer })) }; }
+  return { keywords: kw, ranked: cands.slice(0, 6) }; }
+// Mouser sometimes flags a part DigiKey still calls Active ("please see suggested alternate", NRND). Skip those picks.
+const MOUSER_BAD = /suggested alternate|not recommended|nrnd|obsolete|discontinued|end of life|eol\b/i;
+function mouserFlagged(parts) { return (parts || []).some(p => MOUSER_BAD.test(p.Description || "") || MOUSER_BAD.test(p.LifecycleStatus || "")); }
 
 // ---------- demo (no keys) ----------
 const DEMO_DIST = ["Mouser", "DigiKey", "Farnell", "LCSC", "RS"];
@@ -220,10 +227,22 @@ module.exports = async (req, res) => {
       l.query = l.mpn; l.spec = sp.label;
       if (!hasDK) { unresolved[l.query] = "description search needs DigiKey"; return; }
       try { const r = await resolveSpec(sp, l.qty, want, E.DIGIKEY_CLIENT_ID, E.DIGIKEY_CLIENT_SECRET);
-        if (r.pick) { l.mpn = r.pick.mpn; l.alternatives = r.alternatives; } else unresolved[l.query] = "no matching part found for " + sp.label; }
+        if (r.ranked.length) l.ranked = r.ranked; else unresolved[l.query] = "no matching part found for " + sp.label; }
       catch (e) { const msg = String(e.message || e); errors.DigiKey = msg; unresolved[l.query] = msg; } }));
+    // check the top candidates on Mouser in one batch and drop any it flags as replaced/NRND
+    let checked = { out: {}, errs: {} };
+    const specLines = clean.filter(l => l.ranked);
+    if (E.MOUSER_API_KEY && specLines.length) {
+      try { checked = await mouserPrefetch(specLines.flatMap(l => l.ranked.slice(0, 4).map(c => c.mpn)), E.MOUSER_API_KEY); } catch (e) { console.log("[spec mouser check]", e.message); } }
+    for (const l of specLines) {
+      const ok = l.ranked.filter((c, i) => i >= 4 || checked.errs[norm(c.mpn)] || !mouserFlagged(checked.out[norm(c.mpn)]));
+      const list = ok.length ? ok : l.ranked;
+      if (ok.length < l.ranked.length) console.log("[spec] skipped flagged:", l.ranked.filter(c => !ok.includes(c)).map(c => c.mpn).join(", "));
+      l.mpn = list[0].mpn; l.alternatives = list.slice(1, 4).map(c => ({ mpn: c.mpn, manufacturer: c.manufacturer })); delete l.ranked; }
     const priced = clean.filter(l => !unresolved[l.query]);
-    if (E.MOUSER_API_KEY) mouserPre = priced.length ? mouserPrefetch(priced.map(l => l.mpn), E.MOUSER_API_KEY) : Promise.resolve({ out: {}, errs: {} });
+    if (E.MOUSER_API_KEY) { const need = priced.map(l => l.mpn).filter(m => !(norm(m) in checked.out));
+      mouserPre = (need.length ? mouserPrefetch(need, E.MOUSER_API_KEY) : Promise.resolve({ out: {}, errs: {} }))
+        .then(r => ({ out: { ...checked.out, ...r.out }, errs: r.errs })); }
 
     const results = await Promise.all(clean.map(async l => {
       if (l.query && unresolved[l.query]) return { mpn: l.query, query: l.query, spec: l.spec, manufacturer: null, description: unresolved[l.query], lifecycle: null, offers: [], notFound: true };
