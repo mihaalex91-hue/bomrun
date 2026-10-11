@@ -147,8 +147,8 @@ function loadFile(f){ if(!f) return; const name=f.name.toLowerCase(); const rd=n
 $("sample").addEventListener("click",()=>{ $("bom").value=`Reference,Value,Footprint,MPN,Qty,Manufacturer
 U1,STM32F103C8T6,LQFP-48,STM32F103C8T6,1,STMicroelectronics
 U2,LM1117-3.3,SOT-223,LM1117MPX-3.3/NOPB,1,Texas Instruments
-C1-C8,100nF,0603,GRM188R71H104KA93D,8,Murata
-C9,10uF,0805,GRM21BR61E106KA73L,1,Murata
+C1-C8,100nF,0603,GRM188R72A104KA35D,8,Murata
+C9,10uF,0805,GRM21BR61E106MA73L,1,Murata
 R1-R4,10k,0603,RC0603FR-0710KL,4,Yageo
 R5,1k,0603,RC0603FR-071KL,1,Yageo
 D1,LED,0603,LTST-C193KGKT-5A,1,Lite-On
@@ -210,7 +210,7 @@ function renderAll(){
  $("split").innerHTML=plans.map((p,i)=>{ const body=Object.entries(p.baskets).sort((a,b)=>b[1].sub-a[1].sub).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship*vat)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join("");
   return `<div class="panel" ${i===0?'style="border-color:var(--accent)"':''}><h3>${p.name}${i===0?' <span class="pill ok">cheapest</span>':''}</h3><ul>${body}</ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)}${i>0?` <span class="dim" style="font-weight:400">+${money((p.total-best.total)*vat)}</span>`:""}</p>${cartActions(p)}</div>`; }).join("")
   + nearly.filter(p=>p.total<best.total).map(p=>`<div class="panel" style="border-style:dashed"><h3>${p.name} <span class="pill warn">if you source ${p.missing.length} line${p.missing.length>1?"s":""} elsewhere</span></h3><ul>${Object.entries(p.baskets).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship*vat)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join("")}<li><span class="dim">Missing: <span class="mono">${p.missing.join(", ")}</span></span></li></ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)} <span class="dim" style="font-weight:400">saves ${money((best.total-p.total)*vat)} before buying the missing part${p.missing.length>1?"s":""}</span></p></div>`).join("")
-  + (ub.length?`<div class="panel"><h3>Not available anywhere</h3><ul>${ub.map(m=>`<li><span class="mono">${m}</span><span class="dim">excluded from totals</span></li>`).join("")}</ul></div>`:"");
+  + (ub.length?`<div class="panel"><h3>Can't be bought right now</h3><ul>${ub.map(m=>{const r=results.find(x=>x.mpn===m)||{}; const why=r.notFound?"not found at any distributor":/obsolete|eol|end of life|discontinued/i.test(r.lifecycle||"")?"obsolete – no longer made, look for a replacement":"out of stock at every distributor"; return `<li><span class="mono">${m}</span><span class="dim">${why} · excluded from totals</span></li>`;}).join("")}</ul></div>`:"");
  $("meta").textContent=`Checked ${new Date().toLocaleString("en-GB")} · prices in ${cur}${vat>1?" · VAT "+$("vat").value+"% added":""}`;
  if(results.some(r=>r.demo)) $("meta").textContent+=" · DEMO DATA"; if($("meta").dataset.err){ const e=$("meta").dataset.err; $("meta").textContent+= /429|limit|quota|403/i.test(e) ? " · one distributor hit its daily request limit – results from the others are still shown; full coverage is back tomorrow." : " · some distributors failed: "+e; }
 }
