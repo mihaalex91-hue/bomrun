@@ -44,7 +44,7 @@ footer{margin:56px 0 40px;font-size:.84rem;color:var(--ink-soft)}
 </style>
 </head>
 <body><div class="wrap">
-<nav><a class="brand" href="/">bom<span>run</span></a><span class="tag" id="modeTag">v1 · free beta</span></nav>
+<nav><a class="brand" href="/">bom<span>run</span></a><span style="display:flex;gap:10px;align-items:center"><a class="tag" href="mailto:miha.alex91@gmail.com?subject=Bomrun%20feedback&body=What%20I%20checked%3A%0AWhat%20was%20wrong%20or%20missing%3A%0A" style="text-decoration:none">Send feedback</a><span class="tag" id="modeTag">v1 · free beta</span></span></nav>
 
 <header>
  <h1>Price and stock-check your whole BOM in one go.</h1>
@@ -89,7 +89,7 @@ LM358DR, 4
  <div class="panel"><h2>Coming next</h2><p>Saved BOMs with price and stock alerts, alternates for out-of-stock parts, and a KiCad plugin. Paid plans from £8/month; the free tier stays free.</p></div>
 </section>
 
-<footer><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. © 2026 Bomrun.</p></footer>
+<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account, no cookies beyond anonymous page-view analytics.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="mailto:miha.alex91@gmail.com?subject=Bomrun%20feedback">Email me</a> – I read everything. © 2026 Bomrun.</p></footer>
 </div>
 
 <script>
@@ -201,7 +201,7 @@ function renderAll(){
   + nearly.filter(p=>p.total<best.total).map(p=>`<div class="panel" style="border-style:dashed"><h3>${p.name} <span class="pill warn">if you source ${p.missing.length} line${p.missing.length>1?"s":""} elsewhere</span></h3><ul>${Object.entries(p.baskets).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join("")}<li><span class="dim">Missing: <span class="mono">${p.missing.join(", ")}</span></span></li></ul><p style="margin:10px 0 0;font-weight:700">${money(p.total*vat)} <span class="dim" style="font-weight:400">saves ${money((best.total-p.total)*vat)} before buying the missing part${p.missing.length>1?"s":""}</span></p></div>`).join("")
   + (ub.length?`<div class="panel"><h3>Not available anywhere</h3><ul>${ub.map(m=>`<li><span class="mono">${m}</span><span class="dim">excluded from totals</span></li>`).join("")}</ul></div>`:"");
  $("meta").textContent=`Checked ${new Date().toLocaleString("en-GB")} · prices in ${cur}${vat>1?" · VAT "+$("vat").value+"% added":""}`;
- if(results.some(r=>r.demo)) $("meta").textContent+=" · DEMO DATA"; if($("meta").dataset.err){ $("meta").textContent+=" · some distributors failed: "+$("meta").dataset.err; }
+ if(results.some(r=>r.demo)) $("meta").textContent+=" · DEMO DATA"; if($("meta").dataset.err){ const e=$("meta").dataset.err; $("meta").textContent+= /429|limit|quota|403/i.test(e) ? " · one distributor hit its daily request limit – results from the others are still shown; full coverage is back tomorrow." : " · some distributors failed: "+e; }
 }
 ["vat","boards","overage"].forEach(id=>$(id).addEventListener("input",()=>{ if(results&&id==="vat") renderAll(); }));
 $("export").addEventListener("click",()=>{ if(!results) return; const split=bestPlan().best;
@@ -209,4 +209,5 @@ $("export").addEventListener("click",()=>{ if(!results) return; const split=best
  for(const r of results){ const o=split.pick[r.mpn]; out.push([r.mpn,r.manufacturer||"",r.qty,r.lifecycle||"",o?o.distributor:"",o?o.sku:"",o?o.unit:"",o?o.buyQty:"",o?o.lineTotal:"",o?o.stock:"",o?o.url:""]); }
  const csv=Papa.unparse(out); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="bomrun-"+Date.now()+".csv"; a.click(); });
 </script>
+<script defer src="/_vercel/insights/script.js"></script>
 </body></html>
