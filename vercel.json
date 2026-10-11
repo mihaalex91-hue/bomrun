@@ -1,1 +1,1 @@
-{ "functions": { "api/price.js": { "maxDuration": 20 } } }
+{ "functions": { "api/price.js": { "maxDuration": 20 }, "api/digikey-list.js": { "maxDuration": 15 } } }
