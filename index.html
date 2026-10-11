@@ -56,12 +56,13 @@ footer{margin:56px 0 40px;font-size:.84rem;color:var(--ink-soft)}
 
 <section class="input-grid">
  <div class="panel">
-  <label for="bom">Your BOM – one part per line, or paste a spreadsheet (MPN and quantity columns are detected automatically)</label>
+  <label for="bom">Your BOM – one part per line, or paste a spreadsheet (MPN and quantity columns are detected automatically). New: generic resistors and ceramic caps work too, e.g. <span class="mono">100n 50V X7R 0603</span> or <span class="mono">10k 1% 0603</span> – Bomrun picks a suitable in-stock part.</label>
   <textarea id="bom" placeholder="MPN, Qty, Manufacturer
 STM32F103C8T6, 2, STMicroelectronics
 GRM188R71H104KA93D, 20, Murata
 RC0603FR-0710KL, 40, Yageo
 LM358DR, 4
+C/CERSM 100n 50V X7R 0603, 20
 "></textarea>
   <div class="drop" id="drop">Drop a .csv / .xlsx here, or <label style="display:inline;cursor:pointer;text-decoration:underline;color:var(--ink)">browse<input id="file" type="file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden></label></div>
   <details class="settings"><summary>Column mapping (only if auto-detect gets it wrong)</summary>
@@ -109,12 +110,17 @@ renderShip();
 
 // ---------- parsing ----------
 const MPN_STRONG=/^(mpn|manufacturer ?part ?(number|no|#)?|mfr\.? ?part ?(no|number|#)?|mfg ?part ?(no|number|#)?|mfr ?pn|mfg ?pn|manufacturer_part_number|mfr_part_no)$/i;
-const MPN_WEAK=/^(part ?(number|no|#)|partnumber|pn|part|value|comment)$/i;
+const MPN_WEAK=/^(part ?(number|no|#)|partnumber|pn|part|value|comment|description|desc|part ?description)$/i;
 const MPN_KEYS=new RegExp(MPN_STRONG.source.slice(0,-2)+"|"+MPN_WEAK.source.slice(2),"i");
 const QTY_KEYS=/^(qty|quantity|q|count|amount|qnty|quantity ?per ?board|qty\.?)$/i;
 const REFDES_RE=/^([A-Z]{1,3}\d+)([,\s;]+[A-Z]{1,3}\d+)*$/i;
 function looksLikeMpn(s){ s=String(s).trim(); if(s.length<4||/\s{2,}/.test(s)) return false; if(/^\d{5,}$/.test(s)) return true; /* all-numeric MPNs: Wurth, TDK, Panasonic */ return /\d/.test(s)&&/^[A-Za-z0-9][A-Za-z0-9\-_./+#]*$/.test(s)&&!REFDES_RE.test(s); }
-function scoreMpnCol(vals){ let s=0; for(const v of vals){ if(!v) continue; if(/^\d{1,4}$/.test(v)){s-=3;continue;} if(REFDES_RE.test(v)){s-=2;continue;} if(/^[A-Za-z]+$/.test(v)){s-=2;continue;} if(/\s/.test(v)){s-=2;continue;} if(looksLikeMpn(v)){s+=2;continue;} s-=1; } return s+(new Set(vals).size/Math.max(vals.length,1))*2; }
+const PKG_RE=/(^|[\s/,])(01005|0201|0402|0603|0805|1206|1210|1812|2010|2220|2512)(?=$|[\s/,])/;
+const VAL_RE=/(^|[\s/])(\d+(\.\d+)?\s*[pnuµ]F?|\d+[pnuµ]\d+F?|\d+(\.\d+)?[RKM]|\d+[RKM]\d+|\d+(\.\d+)?\s*(ohms?|Ω))(?=$|[\s/,])/i;
+function looksLikeDesc(s){ s=String(s).trim(); return /\s|\//.test(s)&&PKG_RE.test(s)&&VAL_RE.test(s); }
+const okLine=s=>looksLikeMpn(s)||looksLikeDesc(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function scoreMpnCol(vals){ let s=0; for(const v of vals){ if(!v) continue; if(looksLikeDesc(v)){s+=2;continue;} if(/^\d{1,4}$/.test(v)){s-=3;continue;} if(REFDES_RE.test(v)){s-=2;continue;} if(/^[A-Za-z]+$/.test(v)){s-=2;continue;} if(/\s/.test(v)){s-=2;continue;} if(looksLikeMpn(v)){s+=2;continue;} s-=1; } return s+(new Set(vals).size/Math.max(vals.length,1))*2; }
 function scoreQtyCol(vals){ let s=0; for(const v of vals){ if(!v) continue; const n=Number(String(v).replace(/,/g,'')); if(Number.isInteger(n)&&n>=1&&n<=10000) s+=2; else s-=2; } return s; }
 function detect(hs,data){ const t=hs.map(h=>h.trim()); let mpn=t.findIndex(h=>MPN_STRONG.test(h)); if(mpn<0) mpn=t.findIndex(h=>MPN_WEAK.test(h)); let qty=t.findIndex(h=>QTY_KEYS.test(h));
  data=data||[]; const ncols=Math.max(hs.length,...data.map(r=>r.length)); const col=c=>data.map(r=>(r[c]||"").trim());
@@ -122,11 +128,11 @@ function detect(hs,data){ const t=hs.map(h=>h.trim()); let mpn=t.findIndex(h=>MP
  if(qty<0){ let best=-1,bs=-Infinity; for(let c=0;c<ncols;c++){ if(c===mpn) continue; const vals=col(c); const nums=vals.map(Number); const isIndex=c===0&&vals.length>=2&&nums.every((n,i)=>n===i+1); if(isIndex) continue; const sc=scoreQtyCol(vals); if(sc>bs){bs=sc;best=c;} } qty=best>=0&&bs>0?best:-1; }
  return {mpn, qty}; }
 function parseText(text){
- text=text.trim(); if(text&&!/[,\t;|]/.test(text)) text=text.split(/\r?\n/).map(l=>l.trim().replace(/\s+(?=\S+$)/,',').replace(/\s+/g,' ')).join('\n'); // 'MPN  12' -> 'MPN,12'
+ text=text.trim(); if(text&&!/[,\t;|]/.test(text)) text=text.split(/\r?\n/).map(l=>{ l=l.trim().replace(/\s+/g,' '); const m=l.match(/^(.*\S)\s+(\d+)$/); if(!m) return l; if(looksLikeDesc(l)&&!looksLikeDesc(m[1])) return l; return '"'+m[1].replace(/"/g,'')+'",'+m[2]; }).join('\n'); // 'MPN  12' -> 'MPN,12'; '100n 50V X7R 0603 20' -> desc,20
  const p=Papa.parse(text,{skipEmptyLines:true}); let data=p.data.map(r=>r.map(c=>String(c).trim()));
  if(!data.length) return;
  // header?
- const first=data[0]; const hasHeader=first.some(c=>MPN_KEYS.test(c)||QTY_KEYS.test(c)) || !first.some(looksLikeMpn);
+ const first=data[0]; const hasHeader=first.some(c=>MPN_KEYS.test(c)||QTY_KEYS.test(c)) || !first.some(okLine);
  headers=hasHeader?first:first.map((_,i)=>"Column "+(i+1)); if(hasHeader) data=data.slice(1);
  // if MPN column holds comma lists (KiCad grouped), expand later
  rows=data.filter(r=>r.join("").trim());
@@ -136,7 +142,7 @@ function parseText(text){
 function fillCols(m,q){ const opts=headers.map((h,i)=>`<option value="${i}">${h||("Column "+(i+1))}</option>`).join(""); $("colMpn").innerHTML=opts; $("colQty").innerHTML='<option value="-1">(none – assume 1)</option>'+opts; $("colMpn").value=m; $("colQty").value=(headers.length>1&&q>=0)?q:-1; }
 function lines(){ const mi=+$("colMpn").value, qi=+$("colQty").value, boards=+$("boards").value||1, over=1+(+$("overage").value||0)/100;
  const out=[]; const seen={};
- for(const r of rows){ const mpn=(r[mi]||"").replace(/^"|"$/g,"").trim(); if(!mpn||!looksLikeMpn(mpn)) continue; const q=qi>=0?(parseFloat(r[qi])||1):1; const base=Math.ceil(q*boards); const qty=Math.max(base,Math.round(base*over));
+ for(const r of rows){ const mpn=(r[mi]||"").replace(/^"|"$/g,"").trim(); if(!mpn||!okLine(mpn)) continue; const q=qi>=0?(parseFloat(r[qi])||1):1; const base=Math.ceil(q*boards); const qty=Math.max(base,Math.round(base*over));
   if(seen[mpn]!==undefined){ out[seen[mpn]].qty+=qty; out[seen[mpn]].perBoard+=q; } else { seen[mpn]=out.length; out.push({mpn,qty,perBoard:q,raw:r}); } }
  return out; }
 $("bom").addEventListener("input",()=>parseText($("bom").value));
@@ -159,12 +165,12 @@ Q1,AO3400,SOT-23,AO3400A,2,Alpha & Omega`; parseText($("bom").value); });
 
 // ---------- pricing ----------
 $("run").addEventListener("click",async()=>{
- const ls=lines(); if(!ls.length){ alert("No part numbers found. Check the MPN column mapping."); return; }
+ const ls=lines(); if(!ls.length){ alert("No part numbers or recognisable resistor/capacitor descriptions found. Check the MPN column mapping."); return; }
  if(ls.length>20){ alert("The free tier checks up to 20 lines per run. Paid plans with larger BOMs are coming – for now, split the list."); return; }
  cur=$("cur").value; $("run").disabled=true; $("run").textContent="Checking "+ls.length+" lines…";
  try{ const r=await fetch("/api/price",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lines:ls.map(l=>({mpn:l.mpn,qty:l.qty})),currency:cur})});
   const j=await r.json(); if(j.error) throw new Error(j.error);
-  const byMpn=Object.fromEntries(ls.map(l=>[l.mpn.toLowerCase(),l])); results=j.results.map((x,i)=>{const l=byMpn[String(x.mpn||'').toLowerCase()]||ls[i]||{qty:1,perBoard:1}; return {...x,qty:l.qty,perBoard:l.perBoard};}); $("modeTag").textContent=j.mode==="demo"?"demo data – add API keys":"live: "+(j.sources||[]).join(" · "); if(j.errors){console.warn("distributor errors",j.errors); $("meta").dataset.err=Object.entries(j.errors).map(([k,v])=>k+": "+v).join(" | ");} renderAll(); $("results").hidden=false; $("results").scrollIntoView({behavior:"smooth"});
+  const byMpn=Object.fromEntries(ls.map(l=>[l.mpn.toLowerCase(),l])); results=j.results.map((x,i)=>{const l=byMpn[String(x.query||x.mpn||'').toLowerCase()]||ls[i]||{qty:1,perBoard:1}; return {...x,qty:l.qty,perBoard:l.perBoard};}); $("modeTag").textContent=j.mode==="demo"?"demo data – add API keys":"live: "+(j.sources||[]).join(" · "); if(j.errors){console.warn("distributor errors",j.errors); $("meta").dataset.err=Object.entries(j.errors).map(([k,v])=>k+": "+v).join(" | ");} renderAll(); $("results").hidden=false; $("results").scrollIntoView({behavior:"smooth"});
  }catch(e){ alert("Price check failed: "+e.message); } finally{ $("run").disabled=false; $("run").textContent="Check prices"; }
 });
 
@@ -205,7 +211,8 @@ function renderAll(){
   <div class="sum"><b style="color:${eol||oos||nf?'var(--bad)':'var(--accent)'}">${eol+nrnd+oos+nf}</b><span>${eol} EOL · ${nrnd} NRND · ${oos} out of stock · ${nf} not found</span></div>`;
  const cols=ds; $("table").querySelector("thead").innerHTML=`<tr><th>MPN</th><th>Qty</th><th>Status</th>${cols.map(d=>`<th class="num">${d}</th>`).join("")}<th class="num">Best</th></tr>`;
  $("table").querySelector("tbody").innerHTML=results.map(r=>{ const pk=best.pick[r.mpn]; const lc=r.lifecycle||""; const pill=r.notFound?'<span class="pill bad">not found</span>':/obsolete|eol|discontinued/i.test(lc)?'<span class="pill bad">EOL</span>':/nrnd/i.test(lc)?'<span class="pill warn">NRND</span>':(!r.offers.some(o=>o.inStock)?'<span class="pill bad">no stock</span>':'<span class="pill ok">OK</span>');
-  return `<tr><td><span class="mono">${r.mpn}</span><br><span class="dim" style="font-size:.78rem">${r.manufacturer||""}${r.description?" · "+r.description:""}</span></td><td class="num">${r.qty}</td><td>${pill}</td>${cols.map(d=>{const o=r.offers.find(o=>o.distributor===d); if(!o) return '<td class="num dim">—</td>'; const cls=pk&&pk.distributor===d?"best-cell":""; return `<td class="num ${cls}" title="unit ${money(o.unit)} · MOQ ${o.moq} · ${o.packaging||""}">${o.url&&o.url!=="#"?`<a href="${o.url}" target="_blank" rel="noopener nofollow">${money(o.lineTotal)}</a>`:money(o.lineTotal)}<br><span class="dim" style="font-size:.74rem">${o.inStock?o.stock.toLocaleString()+" in stock":"<span style='color:var(--bad)'>"+(o.stock||0)+" stock</span>"}${o.buyQty>r.qty?" · buy "+o.buyQty:""}</span></td>`;}).join("")}<td class="num">${pk?`<b>${money(pk.lineTotal)}</b><br><span class="dim" style="font-size:.74rem">${pk.distributor}</span>`:'<span class="dim">—</span>'}</td></tr>`; }).join("");
+  const from=r.query?`<br><span class="dim" style="font-size:.74rem">picked for “${esc(r.query)}”${r.spec&&!r.notFound?" → "+esc(r.spec):""}${r.alternatives&&r.alternatives.length?" · alternatives: "+r.alternatives.map(a=>esc(a.mpn)).join(", "):""}</span>`:"";
+  return `<tr><td><span class="mono">${esc(r.mpn)}</span><br><span class="dim" style="font-size:.78rem">${esc(r.manufacturer||"")}${r.description?" · "+esc(r.description):""}</span>${from}</td><td class="num">${r.qty}</td><td>${pill}</td>${cols.map(d=>{const o=r.offers.find(o=>o.distributor===d); if(!o) return '<td class="num dim">—</td>'; const cls=pk&&pk.distributor===d?"best-cell":""; return `<td class="num ${cls}" title="unit ${money(o.unit)} · MOQ ${o.moq} · ${o.packaging||""}">${o.url&&o.url!=="#"?`<a href="${o.url}" target="_blank" rel="noopener nofollow">${money(o.lineTotal)}</a>`:money(o.lineTotal)}<br><span class="dim" style="font-size:.74rem">${o.inStock?o.stock.toLocaleString()+" in stock":"<span style='color:var(--bad)'>"+(o.stock||0)+" stock</span>"}${o.buyQty>r.qty?" · buy "+o.buyQty:""}</span></td>`;}).join("")}<td class="num">${pk?`<b>${money(pk.lineTotal)}</b><br><span class="dim" style="font-size:.74rem">${pk.distributor}</span>`:'<span class="dim">—</span>'}</td></tr>`; }).join("");
  for(const k in PLANS) delete PLANS[k];
  const plans=[best, ...(best.single?[split]:[]), ...singles.filter(p=>p!==best)].slice(0,4);
  $("split").innerHTML=plans.map((p,i)=>{ const body=Object.entries(p.baskets).sort((a,b)=>b[1].sub-a[1].sub).map(([d,b])=>`<li><span>${d} <span class="dim">(${b.lines.length} lines)</span></span><span>${money(b.sub*vat)}${b.ship?` <span class="dim">+ ${money(b.ship*vat)} ship</span>`:' <span class="dim">free ship</span>'}</span></li>`).join("");
@@ -238,8 +245,8 @@ async function sendToCart(kind,p,d,btn){ const items=basketItems(p,d); const sta
   finally{ btn.disabled=false; } } }
 $("split").addEventListener("click",e=>{ const b=e.target.closest("[data-cart]"); if(!b) return; const p=PLANS[b.dataset.plan]; if(p) sendToCart(b.dataset.cart,p,b.dataset.d,b); });
 $("export").addEventListener("click",()=>{ if(!results) return; const split=bestPlan().best;
- const out=[["MPN","Manufacturer","Qty","Lifecycle","Best distributor","SKU","Unit price","Buy qty","Line total","Stock","URL"]];
- for(const r of results){ const o=split.pick[r.mpn]; out.push([r.mpn,r.manufacturer||"",r.qty,r.lifecycle||"",o?o.distributor:"",o?o.sku:"",o?o.unit:"",o?o.buyQty:"",o?o.lineTotal:"",o?o.stock:"",o?o.url:""]); }
+ const out=[["MPN","Your description","Manufacturer","Qty","Lifecycle","Best distributor","SKU","Unit price","Buy qty","Line total","Stock","URL"]];
+ for(const r of results){ const o=split.pick[r.mpn]; out.push([r.mpn,r.query||"",r.manufacturer||"",r.qty,r.lifecycle||"",o?o.distributor:"",o?o.sku:"",o?o.unit:"",o?o.buyQty:"",o?o.lineTotal:"",o?o.stock:"",o?o.url:""]); }
  const csv=Papa.unparse(out); const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="bomrun-"+Date.now()+".csv"; a.click(); });
 </script>
 
@@ -255,7 +262,8 @@ $("export").addEventListener("click",()=>{ if(!results) return; const split=best
 document.getElementById('fbClose').addEventListener('click',()=>P.hidden=true);
 document.getElementById('fbCopy').addEventListener('click',async()=>{const b=document.getElementById('fbCopy');try{await navigator.clipboard.writeText('miha.alex91@gmail.com');b.textContent='Copied';}catch(e){b.textContent='Select & copy';}setTimeout(()=>b.textContent='Copy',1800);});})();
 </script>
-<script defer src="/_vercel/insights/script.js">// ---------- alerts waitlist ----------
+<script defer src="/_vercel/insights/script.js"></script>
+<script>// ---------- alerts waitlist ----------
 document.querySelectorAll("form.wl").forEach(f=>f.addEventListener("submit",async e=>{ e.preventDefault();
   const msg=f.querySelector(".wl-msg"), btn=f.querySelector("button"), email=f.email.value.trim();
   btn.disabled=true; msg.textContent="Saving…";
