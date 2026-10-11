@@ -133,7 +133,10 @@ module.exports = async (req, res) => {
       const metas = hits.filter(Boolean).map(h => h.meta); const offers = hits.filter(h => h && h.offer).map(h => h.offer).sort((a, b) => a.lineTotal - b.lineTotal);
       const pick = k => (metas.find(m => m[k]) || {})[k] || null;
       const hasErr = Object.keys(lineErr).length > 0;
-      return { mpn: l.mpn, manufacturer: pick("manufacturer"), description: pick("description"), lifecycle: pick("lifecycle"), offers, notFound: offers.length === 0 && metas.length === 0, errors: hasErr ? lineErr : undefined };
+      // lifecycle: report the WORST status any distributor gives (DigiKey "Obsolete" must win over Farnell "stocked")
+      const lcRank = x => /obsolete|discontinued|end of life|eol/i.test(x) ? 3 : /nrnd|not recommended|last time/i.test(x) ? 2 : 1;
+      const lc = metas.map(m => m.lifecycle).filter(Boolean).sort((a, b) => lcRank(b) - lcRank(a))[0] || null;
+      return { mpn: l.mpn, manufacturer: pick("manufacturer"), description: pick("description"), lifecycle: lc, offers, notFound: offers.length === 0 && metas.length === 0, errors: hasErr ? lineErr : undefined };
     }));
     res.status(200).json({ mode: "live", sources: adapters.map(a => a.name), errors: Object.keys(errors).length ? errors : undefined, currency: want, results });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
