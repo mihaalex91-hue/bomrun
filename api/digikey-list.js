@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
     console.log("digikey-list status", r.status, "ct", r.headers.get("content-type"), "body", text.slice(0, 300));
     let data = null; try { data = JSON.parse(text); } catch {}
     // Be lenient about the shape: {singleUseUrl}, {SingleUseUrl}, {data:{singleUseUrl}}, a bare string, or a URL inside text.
-    const findUrl = v => { if (!v) return null; if (typeof v === "string") { const m = v.match(/https?:\/\/[^\s"'<>]+mylists[^\s"'<>]*/i); return m ? m[0] : null; }
+    const findUrl = v => { if (!v) return null; if (typeof v === "string") { const m = v.match(/https?:\/\/(?:[a-z0-9-]+\.)*digikey\.[a-z.]+\/[^\s"'<>]*/i); return m ? m[0] : null; }
       if (typeof v === "object") { for (const k of Object.keys(v)) { const f = findUrl(v[k]); if (f) return f; } } return null; };
     const found = findUrl(data) || findUrl(text);
     if (!r.ok || !found) {
