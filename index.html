@@ -83,16 +83,17 @@ LM358DR, 4
  <h2 style="margin-top:28px">Cheapest way to order</h2>
  <div class="split" id="split"></div>
  <div class="actions"><button class="btn quiet" id="export">Export CSV with best offers</button><span class="hint" id="meta"></span></div>
+ <div class="panel" style="margin-top:16px"><h3>Want an email when a part goes EOL or out of stock?</h3><p class="dim" style="margin:6px 0 0">Saved BOMs with stock, price and lifecycle alerts are coming. Leave your email and you'll be first to try them.</p><form class="wl" data-src="results" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input type="email" name="email" required placeholder="you@company.com" style="flex:1;min-width:200px;font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;height:42px"><button class="btn" type="submit">Notify me</button><span class="hint wl-msg" style="width:100%"></span></form></div>
 </section>
 
 <section class="features">
  <div class="panel"><h2>Order-split optimiser</h2><p>Cheapest per line isn't cheapest overall once shipping and minimum orders count. Bomrun compares one-distributor orders against the best split and shows the real difference.</p></div>
  <div class="panel"><h2>EOL and NRND flags</h2><p>Every line carries its lifecycle status so you find the obsolete part before the purchasing department does.</p></div>
  <div class="panel"><h2>UK and EU pricing</h2><p>Prices converted to GBP or EUR, VAT added if you want it, so the number on screen is the number on the invoice.</p></div>
- <div class="panel"><h2>Coming next</h2><p>Saved BOMs with price and stock alerts, alternates for out-of-stock parts, and a KiCad plugin. Paid plans from £8/month; the free tier stays free.</p></div>
+ <div class="panel"><h2>Coming next</h2><p>Saved BOMs with price and stock alerts, alternates for out-of-stock parts, and a KiCad plugin. Paid plans from £8/month; the free tier stays free.</p><form class="wl" data-src="features" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input type="email" name="email" required placeholder="you@company.com" style="flex:1;min-width:200px;font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;height:42px"><button class="btn" type="submit">Notify me</button><span class="hint wl-msg" style="width:100%"></span></form></div>
 </section>
 
-<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account, no cookies beyond anonymous page-view analytics.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="#" id="fbBtn2">Send feedback</a> – I read everything. © 2026 Bomrun.</p></footer>
+<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account, no cookies beyond anonymous page-view analytics. If you leave your email for alerts, it is stored only to tell you when they launch, and never shared.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="#" id="fbBtn2">Send feedback</a> – I read everything. © 2026 Bomrun.</p></footer>
 </div>
 
 <script>
@@ -254,5 +255,14 @@ $("export").addEventListener("click",()=>{ if(!results) return; const split=best
 document.getElementById('fbClose').addEventListener('click',()=>P.hidden=true);
 document.getElementById('fbCopy').addEventListener('click',async()=>{const b=document.getElementById('fbCopy');try{await navigator.clipboard.writeText('miha.alex91@gmail.com');b.textContent='Copied';}catch(e){b.textContent='Select & copy';}setTimeout(()=>b.textContent='Copy',1800);});})();
 </script>
-<script defer src="/_vercel/insights/script.js"></script>
+<script defer src="/_vercel/insights/script.js">// ---------- alerts waitlist ----------
+document.querySelectorAll("form.wl").forEach(f=>f.addEventListener("submit",async e=>{ e.preventDefault();
+  const msg=f.querySelector(".wl-msg"), btn=f.querySelector("button"), email=f.email.value.trim();
+  btn.disabled=true; msg.textContent="Saving…";
+  try{ const r=await fetch("/api/waitlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,source:f.dataset.src,lines:(typeof results!=="undefined"&&results)?results.length:0})});
+    const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||("error "+r.status));
+    msg.textContent="Thanks! You're on the list."; f.email.value=""; if(window.va) window.va("event",{name:"waitlist"}); }
+  catch(err){ msg.textContent="Couldn't save that ("+err.message+"). Try again or use Send feedback."; }
+  finally{ btn.disabled=false; } }));
+</script>
 </body></html>
