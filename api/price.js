@@ -2,9 +2,10 @@
 // A line's "mpn" may also be a generic passive description ("C/CERSM 100n 50V X7R 0603", "R 10k 1% 0603"):
 // it is resolved to one real part via DigiKey (needs DigiKey keys) and returned with query/spec/alternatives.
 // Queries distributors DIRECTLY. Each adapter switches on when its env var exists:
-//   FARNELL_API_KEY                           (element14 Product Search API, Basic plan: 2/s, 1000/day)
+//   FARNELL_API_KEY                           (element14 Product Search API, raised limits 2026-10-15: 5/s, 10000/day)
 //   MOUSER_API_KEY                            (Mouser Search API: 1000/day)
 //   DIGIKEY_CLIENT_ID + DIGIKEY_CLIENT_SECRET (DigiKey Product Information v4: 1000/day)
+//   TME_TOKEN + TME_SECRET                    (TME API v2, developers.tme.eu application token + secret)
 // With no keys at all it returns demo data so the UI stays testable.
 const MAX_LINES = 60;
 // Indicative FX used only when a distributor answers in a different currency than requested. Update occasionally.
@@ -32,7 +33,7 @@ function lifecycle(s) { s = String(s || "").toLowerCase(); if (!s) return null;
   if (/active|production|normal|new product/.test(s)) return "Production"; return s; }
 
 // ---------- Farnell / element14 ----------
-const farnellLimit = limiter(2, 510); // Basic plan: 2 calls/s
+const farnellLimit = limiter(5, 210); // raised 2026-10-15: 5 calls/s, 10k/day
 const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 async function farnellQuery(term, key) {
   const url = `https://api.element14.com/catalog/products?versionNumber=1.4&term=${encodeURIComponent(term)}&storeInfo.id=uk.farnell.com&resultsSettings.offset=0&resultsSettings.numberOfResults=10&resultsSettings.responseGroup=large&callInfo.responseDataFormat=JSON&callInfo.apiKey=${key}`;
@@ -203,6 +204,36 @@ function demo(lines) { return lines.map(l => { const seed = [...l.mpn].reduce((a
     return { distributor: d, sku: d.slice(0, 2).toUpperCase() + "-" + (seed * (k + 1) % 99999), stock, moq, packaging: "Cut Tape", unit, buyQty, lineTotal: +(unit * buyQty).toFixed(4), url: "#", inStock: stock >= l.qty }; }).sort((a, b) => a.lineTotal - b.lineTotal);
   return { mpn: l.mpn, manufacturer: ["Texas Instruments", "Murata", "Yageo", "STMicro", "Vishay"][seed % 5], description: "Demo part – add distributor API keys for live data", lifecycle: seed % 13 === 0 ? "Obsolete" : (seed % 7 === 0 ? "NRND" : "Production"), offers, demo: true }; }); }
 
+
+// ---------- TME (api.tme.eu v2, OAuth2 client credentials; token lives 300 s) ----------
+let tmeTok = { v: null, exp: 0 };
+async function tmeToken(id, secret) {
+  if (tmeTok.v && Date.now() < tmeTok.exp) return tmeTok.v;
+  const r = await fetch("https://api.tme.eu/auth/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + Buffer.from(id + ":" + secret).toString("base64") }, body: new URLSearchParams({ grant_type: "client_credentials" }) });
+  if (!r.ok) throw new Error("tme auth " + r.status); const j = await r.json();
+  tmeTok = { v: j.access_token, exp: Date.now() + Math.max(30, (j.expires_in || 300) - 30) * 1000 }; return tmeTok.v; }
+async function tmeGet(path, params, id, secret) {
+  const tok = await tmeToken(id, secret); const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) (Array.isArray(v) ? v : [v]).forEach(x => q.append(k, x));
+  const r = await fetch("https://api.tme.eu" + path + "?" + q, { headers: { Authorization: "Bearer " + tok } });
+  if (!r.ok) throw new Error("tme " + path + " " + r.status); return r.json(); }
+async function tme(mpn, qty, want, id, secret) {
+  const pj = await tmeGet("/products", { country: "GB", "mpns[]": [mpn] }, id, secret);
+  const els = (pj.data?.elements || []).filter(e => (e.manufacturer_symbols || []).some(m => norm(m) === norm(mpn)) || norm(e.symbol) === norm(mpn));
+  if (!els.length) return null; // never substitute
+  const cur = ["GBP", "EUR", "USD"].includes(want) ? want : "EUR";
+  const dj = await tmeGet("/products/data", { country: "GB", currency: cur, "scope[]": ["prices", "stock"], "symbols[]": els.slice(0, 10).map(e => e.symbol) }, id, secret);
+  const data = Object.fromEntries((dj.data?.elements || []).map(d => [d.symbol, d]));
+  const offers = els.map(e => { const d = data[e.symbol]; if (!d) return null; const pr = d.prices || {};
+    const vat = pr.type === "GROSS" && pr.tax?.rate ? 1 + pr.tax.rate / 100 : 1; // Bomrun adds VAT itself
+    const breaks = (pr.elements || []).map(x => ({ qty: +x.amount, unit: +x.price / vat }));
+    return offer("TME", { sku: e.symbol, stock: d.stock_quantity, moq: e.minimal_amount || 1, mult: e.multiples || 1, packaging: e.unit?.short_name, breaks, url: "https://www.tme.eu/gb/details/" + encodeURIComponent(e.symbol.toLowerCase()) + "/", currency: pr.currency || cur }, qty, want); })
+    .filter(Boolean).sort((a, b) => (b.inStock - a.inStock) || (a.lineTotal - b.lineTotal));
+  const e = els[0]; const st = (e.product_status || []).join(" ");
+  const lc = /DISCONTINUED|CANNOT_BE_ORDERED/.test(st) ? "Obsolete" : /AVAILABLE_WHILE_STOCKS_LAST|NOT_IN_OFFER/.test(st) ? "NRND" : "Production";
+  return { meta: { manufacturer: e.manufacturer?.name || "", description: e.description || "", lifecycle: lc }, offer: offers[0] || null };
+}
+
 // ---------- handler ----------
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -218,6 +249,7 @@ module.exports = async (req, res) => {
     if (E.MOUSER_API_KEY) adapters.push({ name: "Mouser", fn: async (m, q) => { const pre = await mouserPre; const k = norm(m);
       if (pre.errs[k]) throw new Error(pre.errs[k]); return mouserFromParts(pre.out[k], m, q, want); } });
     if (E.DIGIKEY_CLIENT_ID && E.DIGIKEY_CLIENT_SECRET) adapters.push({ name: "DigiKey", fn: (m, q) => digikey(m, q, want, E.DIGIKEY_CLIENT_ID, E.DIGIKEY_CLIENT_SECRET) });
+    if (E.TME_TOKEN && E.TME_SECRET) adapters.push({ name: "TME", fn: (m, q) => tme(m, q, want, E.TME_TOKEN, E.TME_SECRET) });
     if (!adapters.length) return res.status(200).json({ mode: "demo", sources: [], results: demo(clean) });
 
     // generic descriptions -> one real MPN each (before Mouser prefetch, so it batches the resolved MPNs)
