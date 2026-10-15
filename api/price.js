@@ -8,6 +8,16 @@
 //   TME_TOKEN + TME_SECRET                    (TME API v2, developers.tme.eu application token + secret)
 // With no keys at all it returns demo data so the UI stays testable.
 const MAX_LINES = 60;
+// ---------- shared result cache (per warm serverless instance) ----------
+// Mouser and DigiKey allow ~1000 calls/day, so identical lookups (sample BOM, popular parts) are reused for 6 h.
+const CACHE = new Map(); const CACHE_TTL = 6 * 3600 * 1000; const CACHE_MAX = 8000;
+const ckey = (name, mpn, qty, cur) => name + "|" + String(mpn).toUpperCase().replace(/[^A-Z0-9]/g, "") + "|" + qty + "|" + cur;
+const cacheHas = k => { const e = CACHE.get(k); if (!e) return false; if (Date.now() > e.exp) { CACHE.delete(k); return false; } return true; };
+async function cached(k, fn) { if (cacheHas(k)) return CACHE.get(k).v; const v = await fn();
+  if (CACHE.size >= CACHE_MAX) CACHE.delete(CACHE.keys().next().value); CACHE.set(k, { v, exp: Date.now() + CACHE_TTL }); return v; }
+// when a distributor says "limit reached", stop calling it for 15 min instead of burning more requests
+const COOL = {}; const coolMs = 15 * 60 * 1000;
+const isLimit = msg => /\b(429|403)\b|limit|quota|exceeded/i.test(msg);
 // Indicative FX used only when a distributor answers in a different currency than requested. Update occasionally.
 const FX = { GBP: 1, EUR: 1.17, USD: 1.27 }; // 1 GBP = x
 const toCur = (amount, from, to) => amount / (FX[from] || 1) * (FX[to] || 1);
@@ -272,14 +282,19 @@ module.exports = async (req, res) => {
       if (ok.length < l.ranked.length) console.log("[spec] skipped flagged:", l.ranked.filter(c => !ok.includes(c)).map(c => c.mpn).join(", "));
       l.mpn = list[0].mpn; l.alternatives = list.slice(1, 4).map(c => ({ mpn: c.mpn, manufacturer: c.manufacturer })); delete l.ranked; }
     const priced = clean.filter(l => !unresolved[l.query]);
-    if (E.MOUSER_API_KEY) { const need = priced.map(l => l.mpn).filter(m => !(norm(m) in checked.out));
+    if (E.MOUSER_API_KEY) { const need = priced.filter(l => !cacheHas(ckey("Mouser", l.mpn, l.qty, want))).map(l => l.mpn).filter(m => !(norm(m) in checked.out));
+      if (need.length && COOL.Mouser && Date.now() < COOL.Mouser) need.length = 0;
       mouserPre = (need.length ? mouserPrefetch(need, E.MOUSER_API_KEY) : Promise.resolve({ out: {}, errs: {} }))
         .then(r => ({ out: { ...checked.out, ...r.out }, errs: r.errs })); }
 
     const results = await Promise.all(clean.map(async l => {
       if (l.query && unresolved[l.query]) return { mpn: l.query, query: l.query, spec: l.spec, manufacturer: null, description: unresolved[l.query], lifecycle: null, offers: [], notFound: true };
       const lineErr = {};
-      const hits = await Promise.all(adapters.map(a => a.fn(l.mpn, l.qty).catch(e => { const msg = String(e.message || e); errors[a.name] = msg; lineErr[a.name] = msg; console.log("[" + a.name + "] " + l.mpn + ": " + msg); return null; })));
+      const hits = await Promise.all(adapters.map(a => {
+        const k = ckey(a.name, l.mpn, l.qty, want);
+        if (!cacheHas(k) && COOL[a.name] && Date.now() < COOL[a.name]) { const msg = a.name + " 429 daily limit"; errors[a.name] = msg; lineErr[a.name] = msg; return null; }
+        return cached(k, () => a.fn(l.mpn, l.qty)).catch(e => { const msg = String(e.message || e); if (isLimit(msg)) COOL[a.name] = Date.now() + coolMs;
+          errors[a.name] = msg; lineErr[a.name] = msg; console.log("[" + a.name + "] " + l.mpn + ": " + msg); return null; }); }));
       const metas = hits.filter(Boolean).map(h => h.meta); const offers = hits.filter(h => h && h.offer).map(h => h.offer).sort((a, b) => a.lineTotal - b.lineTotal);
       const pick = k => (metas.find(m => m[k]) || {})[k] || null;
       const hasErr = Object.keys(lineErr).length > 0;
