@@ -45,6 +45,20 @@ details.settings{margin-top:12px}details.settings summary{cursor:pointer;font-si
 footer{margin:56px 0 40px;font-size:.84rem;color:var(--ink-soft)}
 [hidden]{display:none!important}
 </style>
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://bomrun.com/">
+<meta property="og:title" content="Bomrun – free BOM price and stock checker">
+<meta property="og:description" content="Compare your bill of materials across Mouser, DigiKey, Farnell and TME in one go, flag EOL parts and find the cheapest order split. Free, no account.">
+<meta property="og:image" content="https://bomrun.com/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://bomrun.com/og.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "WebApplication", "name": "Bomrun", "url": "https://bomrun.com/", "applicationCategory": "BusinessApplication", "operatingSystem": "Any (web browser)", "description": "Free BOM price and stock checker across Mouser, DigiKey, Farnell and TME, with EOL flags and order-split optimiser.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "GBP"}}, {"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "How do I compare BOM prices across Mouser, DigiKey, Farnell and TME?", "acceptedAnswer": {"@type": "Answer", "text": "Paste your parts list or upload the CSV/Excel BOM exported from KiCad, Altium or Eagle. Bomrun queries each distributor live and shows price, stock and MOQ for every line side by side."}}, {"@type": "Question", "name": "Is Bomrun free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Checking a BOM is free, with no account needed, and your BOM is not stored."}}, {"@type": "Question", "name": "Can I check a KiCad BOM?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Export the BOM from KiCad as CSV and drop it in; manufacturer part number and quantity columns are detected automatically."}}, {"@type": "Question", "name": "Does it find the cheapest way to split an order?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Bomrun compares buying everything from one distributor against the cheapest split once shipping and minimum order values are counted."}}, {"@type": "Question", "name": "Does Bomrun flag obsolete or end-of-life parts?", "acceptedAnswer": {"@type": "Answer", "text": "Every line shows its lifecycle status, so EOL and NRND parts are flagged before you order."}}, {"@type": "Question", "name": "Can I price robotics BOMs with motors and mechanical parts?", "acceptedAnswer": {"@type": "Answer", "text": "Electromechanical parts such as motors, sensors, connectors and cables are priced from the distributors, and mechanical or custom parts get quick search links to RS, Misumi, McMaster and AliExpress."}}]}]}</script>
+<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+gtag('consent','default',{analytics_storage:(localStorage.getItem('bomrunConsent')==='yes')?'granted':'denied',ad_storage:'denied',ad_user_data:'denied',ad_personalization:'denied'});
+gtag('js',new Date());gtag('config','G-2BLPTRG4LL');
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-2BLPTRG4LL"></script>
 </head>
 <body><div class="wrap">
 <nav><a class="brand" href="/">bom<span>run</span></a><span style="display:flex;gap:10px;align-items:center"><button class="tag" id="fbBtn" type="button" style="cursor:pointer;background:transparent;font:inherit;color:var(--ink)">Send feedback</button><span class="tag" id="modeTag">v1 · free beta</span></span></nav>
@@ -94,7 +108,16 @@ C/CERSM 100n 50V X7R 0603, 20
  <div class="panel"><h2>Coming next</h2><p>Saved BOMs with price and stock alerts, alternates for out-of-stock parts, and a KiCad plugin. Paid plans from £8/month; the free tier stays free.</p><form class="wl" data-src="features" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input type="email" name="email" required placeholder="you@company.com" style="flex:1;min-width:200px;font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;height:42px"><button class="btn" type="submit">Notify me</button><span class="hint wl-msg" style="width:100%"></span></form></div>
 </section>
 
-<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account, no cookies beyond anonymous page-view analytics. If you leave your email for alerts, it is stored only to tell you when they launch, and never shared.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="#" id="fbBtn2">Send feedback</a> – I read everything. © 2026 Bomrun.</p></footer>
+<section class="faq" style="margin-top:28px"><h2>BOM price checker – common questions</h2>
+ <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">How do I compare BOM prices across Mouser, DigiKey, Farnell and TME?</summary><p class="dim" style="margin:8px 0 0">Paste your parts list or upload the CSV/Excel BOM exported from KiCad, Altium or Eagle. Bomrun queries each distributor live and shows price, stock and MOQ for every line side by side.</p></details>
+ <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Is Bomrun free?</summary><p class="dim" style="margin:8px 0 0">Yes. Checking a BOM is free, with no account needed, and your BOM is not stored.</p></details>
+ <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Can I check a KiCad BOM?</summary><p class="dim" style="margin:8px 0 0">Yes. Export the BOM from KiCad as CSV and drop it in; manufacturer part number and quantity columns are detected automatically.</p></details>
+ <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Does it find the cheapest way to split an order?</summary><p class="dim" style="margin:8px 0 0">Yes. Bomrun compares buying everything from one distributor against the cheapest split once shipping and minimum order values are counted.</p></details>
+ <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Does Bomrun flag obsolete or end-of-life parts?</summary><p class="dim" style="margin:8px 0 0">Every line shows its lifecycle status, so EOL and NRND parts are flagged before you order.</p></details>
+ <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Can I price robotics BOMs with motors and mechanical parts?</summary><p class="dim" style="margin:8px 0 0">Electromechanical parts such as motors, sensors, connectors and cables are priced from the distributors, and mechanical or custom parts get quick search links to RS, Misumi, McMaster and AliExpress.</p></details>
+</section>
+
+<footer><p><b>Privacy:</b> your BOM is sent to our pricing function only to query the distributors and is not stored or logged. No account. Anonymous page-view analytics (Vercel), plus Google Analytics cookies only if you accept them. If you leave your email for alerts, it is stored only to tell you when they launch, and never shared.</p><p>Bomrun is independent and not affiliated with any distributor. Prices and stock are indicative at the time of the check. Spotted a wrong price or a missing feature? <a href="#" id="fbBtn2">Send feedback</a> – I read everything. © 2026 Bomrun.</p></footer>
 </div>
 
 <script>
@@ -273,4 +296,11 @@ document.querySelectorAll("form.wl").forEach(f=>f.addEventListener("submit",asyn
   catch(err){ msg.textContent="Couldn't save that ("+err.message+"). Try again or use Send feedback."; }
   finally{ btn.disabled=false; } }));
 </script>
+<div id="ckBar" style="display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:60;max-width:560px;margin:0 auto;background:var(--panel2,#1b1f27);border:1px solid var(--line,#333);border-radius:12px;padding:12px 14px;gap:10px;align-items:center;flex-wrap:wrap;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.35)">
+ <span style="flex:1;min-width:200px">Can we use Google Analytics cookies to see how Bomrun is used? No ads, and your BOM is never tracked.</span>
+ <button class="btn" id="ckYes" type="button" style="padding:7px 12px">Accept</button><button class="btn quiet" id="ckNo" type="button" style="padding:7px 12px">Decline</button>
+</div>
+<script>(function(){const k='bomrunConsent',b=document.getElementById('ckBar');if(!localStorage.getItem(k))b.style.display='flex';
+function set(v){localStorage.setItem(k,v);b.style.display='none';gtag('consent','update',{analytics_storage:v==='yes'?'granted':'denied'});}
+document.getElementById('ckYes').onclick=()=>set('yes');document.getElementById('ckNo').onclick=()=>set('no');})();</script>
 </body></html>
